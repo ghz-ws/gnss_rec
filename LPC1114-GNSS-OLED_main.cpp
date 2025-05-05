@@ -7,20 +7,18 @@ float tim,alt;
 uint8_t month,day,hour,minu,sec;
 uint16_t year, alt_i;
 char ns,ew; //north/south, east/west
-uint8_t lat_deg,lat_min,lon_deg,lon_min,pos_stat,sat;    //latitude, longitude, positioning status, satellites
-uint32_t lat,lon,lat_f,lon_f;   //latitude, longitude
+uint8_t lat_deg,lat_min,lon_deg,lon_min,lat_sec,lon_sec,pos_stat,sat;    //latitude, longitude, positioning status, satellites
+uint16_t lat_sec_f,lon_sec_f;
+double lat_f,lon_f,temp;
 uint8_t finish_flag;
 char char_read();
 char char2char();
-float char2flac();
+double char2flac();
 void nmea_parser();
-void char2lat_lon();
-uint32_t A,B;   //for latitude and longitude integer(A)/float(B). global var.
 
-const uint8_t secret=0; //if 1, secret mode
 const uint8_t oled1=0x78;   //oled i2c adr 0x3c<<1
 const uint8_t oled2=0x7A;   //oled i2c adr 0x3d<<1
-const uint8_t brightness=0x0;    //oled contrast. 0x0-0xff
+const uint8_t brightness=0xff;    //oled contrast. 0x0-0xff
 void oled_init(uint8_t addr, uint8_t contrast);     //lcd init func. default=0x7f
 char buf[17];  //i2c buffer for oled
 
@@ -42,15 +40,20 @@ int main(){
     while (true){
         nmea_parser();
         if(finish_flag==1){
-            lat_deg=uint8_t(lat/100);
-            lat_min=uint8_t(uint16_t(lat)-lat_deg*100);
-            lon_deg=uint8_t(lon/100);
-            lon_min=uint8_t(uint16_t(lon)-lon_deg*100);
+            lat_deg=uint8_t(lat_f/100);
+            lat_min=uint8_t(uint16_t(lat_f)-lat_deg*100);
+            temp=(lat_f-lat_deg*100-lat_min)*60;    //lat. sec float type
+            lat_sec=(uint8_t)temp;
+            lat_sec_f=(uint16_t)((temp-lat_sec)*1000);
+            lon_deg=uint8_t(lon_f/100);
+            lon_min=uint8_t(uint16_t(lon_f)-lon_deg*100);
+            temp=(lon_f-lon_deg*100-lon_min)*60;    //lon. sec float type
+            lon_sec=(uint8_t)temp;
+            lon_sec_f=(uint16_t)((temp-lon_sec)*1000);
             alt_i=(uint16_t)alt;
             hour=(uint8_t)(tim/10000);
             minu=(uint8_t)((tim-hour*10000)/100);
             sec=(uint8_t)(tim-hour*10000-minu*100);
-            //printf("%c %d,%d.%d %c %d,%d.%d Status=%d, Sat=%d, Altitude=%d\r\nTime %d/%d/%d %d:%d %d\r\n",ns,lat_deg,lat_min,lat_f,ew,lon_deg,lon_min,lon_f,pos_stat,sat,alt_i,year,month,day,hour,minu,sec);
 
             //oled1 1st line
             buf[0]=0x0;
@@ -62,29 +65,17 @@ int main(){
             buf[3]=' ';   //space
             buf[4]=0x30+(lat_deg/10)%10; //latitude degree 10
             buf[5]=0x30+(lat_deg)%10; //latitude degree 1
-            buf[6]=',';   //,
+            buf[6]=0xdf;   //degree
             buf[7]=0x30+(lat_min/10)%10;   //latitude minute 10
             buf[8]=0x30+(lat_min)%10;   //latitude minute 10
-            buf[9]='.';   //.
-            buf[10]=0x30+(lat_f/1000000)%10;   //latitude float
-            buf[11]=0x30+(lat_f/100000)%10;   //latitude float
-            buf[12]=0x30+(lat_f/10000)%10;   //latitude float
-            buf[13]=0x30+(lat_f/1000)%10;   //latitude float
-            buf[14]=0x30+(lat_f/100)%10;   //latitude float
-            buf[15]=0x30+(lat_f/10)%10;   //latitude float
-            buf[16]=0x30+(lat_f)%10;   //latitude float
-            if(secret){
-                buf[7]=0b11001011;   //ﾋ
-                buf[8]=0b11010000;   //ﾐ
-                buf[9]=0b11000010;   //ﾂ
-                buf[10]=0b11010000;   //ﾐ
-                buf[11]=0b10111110;   //ｾ
-                buf[12]=0b11010111;   //ﾗ
-                buf[13]=0b11011010;   //ﾚ
-                buf[14]=0b11000101;   //ﾅ
-                buf[15]=0b10110010;   //ｲ
-                buf[16]=0b11010110;   //ﾖ
-            }
+            buf[9]=0x27;   //'
+            buf[10]=0x30+(lat_sec/10)%10;   //latitude sec 10
+            buf[11]=0x30+(lat_sec)%10;   //latitude sec 1
+            buf[12]='.';   //space
+            buf[13]=0x30+(lat_sec_f/100)%10;   //latitude sec float 100
+            buf[14]=0x30+(lat_sec_f/10)%10;   //latitude sec float 10
+            buf[15]=0x30+(lat_sec_f)%10;   //latitude sec float 1
+            buf[16]=0x22;   //"
             i2c.write(oled1,buf,17);
 
             //oled1 2nd line
@@ -97,29 +88,17 @@ int main(){
             buf[3]=0x30+(lon_deg/100)%10; //longitude degree 100
             buf[4]=0x30+(lon_deg/10)%10; //longitude degree 10
             buf[5]=0x30+(lon_deg)%10; //longitude degree 1
-            buf[6]=',';   //,
+            buf[6]=0xdf;   //degree
             buf[7]=0x30+(lon_min/10)%10;   //longitude minute 10
             buf[8]=0x30+(lon_min)%10;   //longitude minute 10
-            buf[9]='.';   //.
-            buf[10]=0x30+(lon_f/1000000)%10;   //longitude float
-            buf[11]=0x30+(lon_f/100000)%10;   //longitude float
-            buf[12]=0x30+(lon_f/10000)%10;   //longitude float
-            buf[13]=0x30+(lon_f/1000)%10;   //longitude float
-            buf[14]=0x30+(lon_f/100)%10;   //longitude float
-            buf[15]=0x30+(lon_f/10)%10;   //longitude float
-            buf[16]=0x30+(lon_f)%10;   //longitude float
-            if(secret){
-                buf[7]=0b11001011;   //ﾋ
-                buf[8]=0b11010000;   //ﾐ
-                buf[9]=0b11000010;   //ﾂ
-                buf[10]=0b11010000;   //ﾐ
-                buf[11]=0b10111110;   //ｾ
-                buf[12]=0b11010111;   //ﾗ
-                buf[13]=0b11011010;   //ﾚ
-                buf[14]=0b11000101;   //ﾅ
-                buf[15]=0b10110010;   //ｲ
-                buf[16]=0b11010110;   //ﾖ
-            }
+            buf[9]=0x27;   //'
+            buf[10]=0x30+(lon_sec/10)%10;   //longitude sec 10
+            buf[11]=0x30+(lon_sec)%10;   //longitude sec 1
+            buf[12]='.';   //space
+            buf[13]=0x30+(lon_sec_f/100)%10;   //longitude sec float 100
+            buf[14]=0x30+(lon_sec_f/10)%10;   //longitude sec float 10
+            buf[15]=0x30+(lon_sec_f)%10;   //longitude sec float 1
+            buf[16]=0x22;   //"
             i2c.write(oled1,buf,17);
 
             //oled2 1st line
@@ -207,7 +186,7 @@ char char2char(){
     return local_buf[0];
 }
 
-float char2flac(){
+double char2flac(){
     char temp[1],local_buf[10];          //local buffer
     uint8_t i;
     for(i=0;i<sizeof(local_buf);++i) local_buf[i]='\0'; //init local buf
@@ -219,31 +198,6 @@ float char2flac(){
         ++i;
     }
     return atof(local_buf);
-}
-
-void char2lat_lon(){
-    char temp[1],local_buf1[8],local_buf2[8];          //local buffer
-    uint8_t i,flag;
-    for(i=0;i<sizeof(local_buf1);++i) local_buf1[i]='\0'; //init local_buf1
-    for(i=0;i<sizeof(local_buf2);++i) local_buf2[i]='\0'; //init local_buf2
-    i=0;
-    flag=0;
-    while(true){
-        temp[0]=char_read();
-        if(temp[0]==',') break; //',' is delimiter
-        if(temp[0]=='.'){
-            flag=1; //switch int or float
-            i=0;
-        }else if(flag==1){
-            local_buf2[i]=temp[0];  //float
-            ++i;
-        }else{
-            local_buf1[i]=temp[0];  //int
-            ++i;
-        }
-    }
-    A=atoi(local_buf1); //means int
-    B=atoi(local_buf2); //means float
 }
 
 void nmea_parser(){
@@ -272,13 +226,9 @@ void nmea_parser(){
     if((ID[2]=='G')&(ID[3]=='G')){ //decode GxGGA
         char_read();    //remove ','
         tim=char2flac();
-        char2lat_lon(); //read lat
-        lat=A;
-        lat_f=B;
+        lat_f=char2flac();
         ns=char2char();
-        char2lat_lon(); //read lon
-        lon=A;
-        lon_f=B;
+        lon_f=char2flac();
         ew=char2char();
         pos_stat=uint8_t(char2flac());
         sat=uint8_t(char2flac());
@@ -304,7 +254,6 @@ void oled_init(uint8_t addr, uint8_t contrast){
     buf[1]=0x01;           //0x01 clear disp
     i2c.write(addr,buf,2);
     thread_sleep_for(20);
-
     //set contrsat
     buf[1]=0x2a;
     i2c.write(addr,buf,2);
